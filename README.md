@@ -47,21 +47,3 @@ node server.js
 
 Das Standard-Passwort für den Admin-Login lautet: admin
 
-Screenshots
-Admin Dashboard Login
-<img width="642" height="567" alt="Admin Dashboard Login" src="https://github.com/user-attachments/assets/697f88c4-7845-4440-b61d-2d19631e7234" />
-
-Übersicht des Admin Dashboards
-<img width="1882" height="763" alt="Übersicht des Admin Dashboards" src="https://github.com/user-attachments/assets/69a6886c-7da4-4295-a783-a9f4d3579e53" />
-
-Filialauswahl im Admin Center
-<img width="353" height="271" alt="Filialauswahl im Admin Center" src="https://github.com/user-attachments/assets/3c832c6f-6dfd-42bb-be66-ab6019e585cb" />
-
-Filialauswahl für Teams
-<img width="651" height="540" alt="Filialauswahl für Teams" src="https://github.com/user-attachments/assets/2aa9f9a1-593c-4666-8bb6-1baa7d8fd19b" />
-
-Start der Inventurzählung
-<img width="1901" height="594" alt="Auswahl und Zeitstart der Inventurzählung" src="https://github.com/user-attachments/assets/b05ac4eb-0f23-41ec-8170-7b6605b162ff" />
-
-Fundartikel melden
-<img width="666" height="627" alt="Fundartikel melden" src="https://github.com/user-attachments/assets/a1fde0a4-e84f-49b8-892b-206535c77dc5" />
