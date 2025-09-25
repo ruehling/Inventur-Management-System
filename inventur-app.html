@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventur-Management-System</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .custom-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 1040; display: flex; justify-content: center; align-items: center; }
+        .custom-modal-content { background-color: white; padding: 2rem; border-radius: 0.5rem; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
+        .image-modal-content { padding: 0.5rem; max-width: 90vw; max-height: 90vh; position: relative; }
+        .hall-plan-container { position: relative; }
+        .hall-plan-container.picking-mode { cursor: crosshair; }
+        .marker-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .map-marker { position: absolute; transform: translate(-50%, -100%); cursor: pointer; transition: transform 0.2s ease-in-out; display: flex; flex-direction: column; align-items: center; pointer-events: auto; }
+        .map-marker .fa-map-pin { font-size: 2.5rem; color: #ef4444; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .marker-text { background-color: white; color: #1f2937; font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 9999px; border: 1px solid #ef4444; white-space: nowrap; margin-bottom: 4px; box-shadow: 1px 1px 3px rgba(0,0,0,0.2); }
+    </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="text-gray-800">
+
+    <div id="login-screen" class="min-h-screen flex items-center justify-center bg-gray-100">
+        <div class="w-full max-w-md p-8 bg-white rounded-xl shadow-lg space-y-6" x-data="{ loginType: 'admin' }">
+            <div class="text-center">
+                <i class="fa-solid fa-boxes-stacked fa-3x text-blue-600"></i>
+                <h1 class="text-3xl font-bold text-gray-800 mt-4">Inventur-System</h1>
+                <p class="text-gray-500">Bitte melden Sie sich an.</p>
+            </div>
+            <div class="flex p-1 bg-gray-200 rounded-lg">
+                <button @click="loginType = 'admin'" :class="loginType === 'admin' ? 'bg-white text-blue-600 shadow' : 'text-gray-600'" class="w-1/2 py-2 rounded-md font-semibold transition-colors">Admin</button>
+                <button @click="loginType = 'team'; showTeamLoginGuide()" :class="loginType === 'team' ? 'bg-white text-blue-600 shadow' : 'text-gray-600'" class="w-1/2 py-2 rounded-md font-semibold transition-colors">Team</button>
+            </div>
+            <div x-show="loginType === 'admin'" x-cloak>
+                <label for="password" class="block text-sm font-medium text-gray-700">Passwort</label>
+                <input type="password" id="password" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm" placeholder="Passwort eingeben">
+                 <button id="login-button-admin" class="mt-4 w-full flex justify-center py-2 px-4 border rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Anmelden</button>
+                <p id="login-error" class="text-red-500 text-sm text-center hidden mt-2">Falsches Passwort. (Tipp: 'admin')</p>
+            </div>
+            <div x-show="loginType === 'team'" x-cloak class="space-y-4">
+                <div>
+                    <label for="login-location-select" class="block text-sm font-medium text-gray-700">1. Filiale auswählen</label>
+                    <select id="login-location-select" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select>
+                </div>
+                <div id="login-team-select-wrapper" class="hidden">
+                    <label for="login-team-select" class="block text-sm font-medium text-gray-700">2. Team auswählen</label>
+                    <select id="login-team-select" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select>
+                </div>
+                <button id="login-button-team" class="w-full flex justify-center py-2 px-4 border rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Anmelden</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="location-selection-screen" class="hidden min-h-screen bg-gray-100 p-8">
+        <header class="max-w-5xl mx-auto flex justify-between items-center mb-8">
+             <div class="flex items-center gap-3">
+                 <i class="fa-solid fa-boxes-stacked fa-2x text-blue-600"></i>
+                 <h1 class="text-3xl font-bold text-gray-800">Filiale auswählen</h1>
+            </div>
+            <button id="logout-button-from-selection" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                <i class="fa-solid fa-right-from-bracket mr-2"></i>Abmelden
+            </button>
+        </header>
+        <div id="location-list-container" class="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
+    </div>
+
+
+    <div id="admin-app-container" class="hidden">
+        <header class="bg-white shadow-md p-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                 <i class="fa-solid fa-boxes-stacked fa-2x text-blue-600"></i>
+                 <div>
+                    <h1 class="text-2xl font-bold">Inventur-Dashboard</h1>
+                    <p id="selected-location-name" class="text-sm font-semibold text-blue-600"></p>
+                 </div>
+            </div>
+            <div>
+                <button id="change-location-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors mr-4">
+                    <i class="fa-solid fa-store mr-2"></i>Filiale wechseln
+                </button>
+                <span id="user-role-admin" class="text-sm font-semibold text-gray-600 mr-4 p-2 bg-gray-200 rounded-lg"></span>
+                <button id="logout-button-admin" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                    <i class="fa-solid fa-right-from-bracket mr-2"></i>Abmelden
+                </button>
+            </div>
+        </header>
+        <main class="p-4 md:p-8 space-y-8">
+             <div id="admin-panel" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold mb-4 border-b pb-2">Admin-Bereich</h2>
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-8">
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Standorte</h3>
+                        <button id="add-location-btn" class="mb-3 w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"><i class="fa-solid fa-plus mr-2"></i>Hinzufügen</button>
+                        <div id="location-admin-list" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Teams (Filiale)</h3>
+                        <button id="add-team-btn" class="mb-3 w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"><i class="fa-solid fa-plus mr-2"></i>Hinzufügen</button>
+                        <div id="team-admin-list" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Hallenpläne (Filiale)</h3>
+                        <button id="add-plan-btn" class="mb-3 w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"><i class="fa-solid fa-plus mr-2"></i>Hinzufügen</button>
+                        <div id="plan-admin-list" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Bereiche (Hallenplan)</h3>
+                         <button id="add-area-btn" class="mb-3 w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"><i class="fa-solid fa-plus mr-2"></i>Hinzufügen</button>
+                        <div id="area-admin-list" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Zeiterfassung (Filiale)</h3>
+                        <div id="time-log-container" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                         <button id="export-times-btn" class="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"><i class="fa-solid fa-file-csv mr-2"></i>Zeiten exportieren (CSV)</button>
+                    </div>
+                     <div>
+                        <h3 class="text-lg font-semibold mb-3">Fundgrube (Filiale)</h3>
+                        <div id="found-items-admin-list" class="space-y-2 max-h-96 overflow-y-auto pr-2"></div>
+                        <button id="export-found-items-btn" class="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"><i class="fa-solid fa-file-csv mr-2"></i>Fundgrube exportieren</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="status-overview-panel" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold mb-4 border-b pb-2">Fortschritts-Übersicht (Filiale)</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2"><i class="fa-solid fa-list-ul text-orange-500"></i>Noch zu zählende Bereiche</h3>
+                        <div id="open-areas-list" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2"><i class="fa-solid fa-check-double text-green-500"></i>Abgeschlossene Bereiche</h3>
+                        <div id="completed-areas-list" class="space-y-2 max-h-80 overflow-y-auto pr-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="hall-plan-section" class="bg-white p-6 rounded-xl shadow-lg">
+                <div class="md:flex justify-between items-center mb-4 space-y-4 md:space-y-0">
+                    <h2 class="text-xl font-bold">Hallenplan Ansicht</h2>
+                    <div class="flex items-center gap-4">
+                        <div>
+                            <label for="plan-select" class="block text-sm font-medium text-gray-700">Hallenplan auswählen:</label>
+                            <select id="plan-select" class="mt-1 block w-full md:w-auto p-2 border-gray-300 rounded-md shadow-sm"></select>
+                        </div>
+                        <div>
+                           <label for="team-filter-select" class="block text-sm font-medium text-gray-700">Filter nach Team:</label>
+                           <select id="team-filter-select" class="mt-1 block w-full md:w-auto p-2 border-gray-300 rounded-md shadow-sm"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div id="hall-plan-container" class="md:col-span-2 hall-plan-container bg-gray-100 min-h-[300px] flex items-center justify-center rounded-lg">
+                         <img id="hall-plan-image" src="" alt="Hallenplan" class="rounded-lg shadow-md w-full h-auto" style="object-fit: contain;">
+                         <div id="marker-container" class="marker-container"></div>
+                         <p id="hall-plan-placeholder" class="text-gray-500">Bitte einen Hallenplan auswählen.</p>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold mb-2">Bereichslegende</h3>
+                        <div id="area-legend" class="space-y-2 max-h-[450px] overflow-y-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="team-app-container" class="hidden">
+        <header class="bg-white shadow-md p-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                 <i class="fa-solid fa-clipboard-list fa-2x text-blue-600"></i>
+                 <div>
+                    <h1 class="text-2xl font-bold" id="team-name-header"></h1>
+                    <p id="team-location-header" class="text-sm text-gray-600"></p>
+                 </div>
+            </div>
+            <div class="flex items-center gap-4">
+                 <button id="enable-notifications-btn" title="Benachrichtigungen aktivieren" class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    <i class="fa-solid fa-bell"></i>
+                </button>
+                 <button id="logout-button-team" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                    <i class="fa-solid fa-right-from-bracket mr-2"></i>Abmelden
+                </button>
+            </div>
+        </header>
+        <main class="p-4 md:p-8">
+            <h2 class="text-2xl font-bold mb-6">Meine Aufgaben</h2>
+            <div id="team-areas-container" class="space-y-8"></div>
+        </main>
+    </div>
+
+
+    <div id="area-details-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 id="area-details-modal-title" class="text-xl font-bold mb-4">Bereichsdetails</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="area-name" class="block text-sm font-medium">Name des Bereichs</label>
+                    <input type="text" id="area-name" class="mt-1 block w-full p-2 border rounded-md">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="area-coord-x" class="block text-sm font-medium">Koordinate X (%)</label>
+                        <input type="number" id="area-coord-x" class="mt-1 block w-full p-2 border rounded-md" placeholder="z.B. 86.5">
+                    </div>
+                    <div>
+                        <label for="area-coord-y" class="block text-sm font-medium">Koordinate Y (%)</label>
+                        <input type="number" id="area-coord-y" class="mt-1 block w-full p-2 border rounded-md" placeholder="z.B. 8.5">
+                    </div>
+                </div>
+                 <button id="pick-coords-btn" type="button" class="w-full text-sm px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200">
+                    <i class="fa-solid fa-map-pin mr-2"></i>Position auf Karte wählen
+                </button>
+                <div>
+                    <label for="assign-team-in-area-modal" class="block text-sm font-medium">Team zuweisen</label>
+                    <select id="assign-team-in-area-modal" class="mt-1 block w-full p-2 border rounded-md"></select>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="area-details-modal-cancel" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">Abbrechen</button>
+                <button id="area-details-modal-save" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="team-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 id="team-modal-title" class="text-xl font-bold mb-4">Team Details</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="team-name" class="block text-sm font-medium">Teamname</label>
+                    <input type="text" id="team-name" class="mt-1 block w-full p-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">Mitglieder</label>
+                    <div id="team-members-list" class="mt-1 space-y-2 max-h-48 overflow-y-auto p-2 border rounded-md bg-gray-50"></div>
+                    <div class="mt-2 flex gap-2">
+                        <input type="text" id="new-member-name" class="flex-grow p-2 border rounded-md" placeholder="Neuer Mitarbeiter...">
+                        <button type="button" id="add-member-btn" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 flex-shrink-0">
+                            <i class="fa-solid fa-plus"></i> Hinzufügen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="team-modal-cancel" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">Abbrechen</button>
+                <button id="team-modal-save" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Speichern</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="location-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 id="location-modal-title" class="text-xl font-bold mb-4">Standort Details</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="location-name" class="block text-sm font-medium">Name des Standorts</label>
+                    <input type="text" id="location-name" class="mt-1 block w-full p-2 border rounded-md">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="location-modal-cancel" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">Abbrechen</button>
+                <button id="location-modal-save" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="plan-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 id="plan-modal-title" class="text-xl font-bold mb-4">Hallenplan Details</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="plan-name" class="block text-sm font-medium">Anzeigename des Plans</label>
+                    <input type="text" id="plan-name" class="mt-1 block w-full p-2 border rounded-md" placeholder="z.B. Erdgeschoss">
+                </div>
+                <div>
+                    <label for="plan-filename" class="block text-sm font-medium">Dateiname des Bildes</label>
+                    <input type="text" id="plan-filename" class="mt-1 block w-full p-2 border rounded-md" placeholder="z.B. filiale-a-eg.png">
+                    <p class="mt-1 text-xs text-gray-500">Die Bilddatei muss sich im selben Ordner wie die App befinden.</p>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="plan-modal-cancel" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">Abbrechen</button>
+                <button id="plan-modal-save" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Speichern</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="first-run-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 class="text-xl font-bold mb-4">Anleitung: Team-Login</h3>
+            <div class="space-y-4 text-gray-700">
+                <p>Willkommen in der Team-Ansicht! Die Anmeldung erfolgt in zwei Schritten:</p>
+                <ol class="list-decimal list-inside space-y-2">
+                    <li>Wählen Sie <strong>zuerst Ihre Filiale</strong> aus der oberen Liste aus.</li>
+                    <li>Danach erscheint eine zweite Liste mit den Teams für diese Filiale. <strong>Wählen Sie hier Ihr Team</strong> aus.</li>
+                    <li>Klicken Sie auf "Anmelden", um zu Ihren zugewiesenen Inventurbereichen zu gelangen.</li>
+                </ol>
+            </div>
+            <div class="mt-6 flex justify-end">
+                <button id="first-run-modal-close" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Verstanden</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-viewer-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content image-modal-content">
+            <button id="image-viewer-close" class="absolute -top-3 -right-3 bg-white rounded-full h-8 w-8 flex items-center justify-center text-lg text-red-500 hover:bg-red-100 transition">&times;</button>
+            <div id="modal-image-wrapper" class="relative w-full h-full">
+                <img id="modal-image" src="" class="block max-w-full max-h-full object-contain">
+                <div id="modal-marker-container" class="marker-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="found-item-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 id="found-item-modal-title" class="text-xl font-bold mb-4">Unbekannten Artikel melden</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="found-item-description" class="block text-sm font-medium">Beschreibung</label>
+                    <textarea id="found-item-description" rows="3" class="mt-1 block w-full p-2 border rounded-md" placeholder="z.B. Roter Eimer, 10 Liter, mit schwarzem Henkel"></textarea>
+                </div>
+                <div>
+                    <label for="found-item-quantity" class="block text-sm font-medium">Menge</label>
+                    <input type="number" id="found-item-quantity" class="mt-1 block w-full p-2 border rounded-md" value="1" min="1">
+                </div>
+                <div>
+                    <label for="found-item-barcode" class="block text-sm font-medium">Barcode (falls vorhanden)</label>
+                    <div class="mt-1 flex rounded-md shadow-sm">
+                        <input type="text" id="found-item-barcode" class="flex-1 block w-full min-w-0 p-2 border rounded-l-md" placeholder="Barcode-Nummer...">
+                        <button id="scan-barcode-btn" type="button" class="inline-flex items-center px-3 text-sm text-gray-500 bg-gray-50 border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-100">
+                            <i class="fa-solid fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+                <a id="barcode-web-search-btn" href="#" target="_blank" class="hidden mt-2 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                    <i class="fa-solid fa-magnifying-glass mr-2"></i>EAN auf Google suchen
+                </a>
+                <div>
+                    <label for="found-item-photo" class="block text-sm font-medium">Foto (optional)</label>
+                    <input type="file" id="found-item-photo" accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <img id="photo-preview" src="" class="mt-2 rounded-md max-h-48 hidden">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="found-item-modal-cancel" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">Abbrechen</button>
+                <button id="found-item-modal-save" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Senden</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="scanner-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content p-2 sm:p-4">
+             <h3 class="text-xl font-bold mb-2">Barcode scannen</h3>
+             <div class="bg-black rounded-md overflow-hidden">
+                <video id="scanner-video" class="w-full h-auto"></video>
+             </div>
+             <p id="scanner-status" class="text-center text-sm text-gray-500 mt-2">Kamera wird gestartet...</p>
+             <button id="scanner-cancel" class="mt-4 w-full px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600">Abbrechen</button>
+        </div>
+    </div>
+
+    <div id="comment-modal" class="custom-modal-backdrop hidden">
+        <div class="custom-modal-content">
+            <h3 class="text-xl font-bold mb-4">Kommentar für geklärten Artikel</h3>
+            <div>
+                <label for="comment-textarea" class="block text-sm font-medium">Was ist mit dem Artikel passiert?</label>
+                <textarea id="comment-textarea" rows="4" class="mt-1 block w-full p-2 border rounded-md" placeholder="z.B. Artikel im ERP gefunden unter Art-Nr. 12345 und nachgebucht."></textarea>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="comment-modal-cancel" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">Abbrechen</button>
+                <button id="comment-modal-save" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Speichern</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="client.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- Globale Variablen & State ---
+        const API_URL = '/api/data';
+        const ADMIN_PASS = 'admin';
+        let locations = [], teams = [], areas = [], timeLogs = [], hallPlans = [], foundItems = [];
+        let currentEditingId = null;
+        let currentFoundItemAreaId = null;
+        let foundItemImageData = null;
+        let barcodeReader;
+        let currentCommentItemId = null;
+
+        // --- DOM Elemente ---
+        const allViews = [document.getElementById('login-screen'), document.getElementById('location-selection-screen'), document.getElementById('admin-app-container'), document.getElementById('team-app-container')];
+        const teamModal = document.getElementById('team-modal');
+        const locationModal = document.getElementById('location-modal');
+        const areaDetailsModal = document.getElementById('area-details-modal');
+        const hallPlanContainer = document.getElementById('hall-plan-container');
+        const planModal = document.getElementById('plan-modal');
+        const planSelect = document.getElementById('plan-select');
+        const firstRunModal = document.getElementById('first-run-modal');
+        const imageViewerModal = document.getElementById('image-viewer-modal');
+        const foundItemModal = document.getElementById('found-item-modal');
+        const scannerModal = document.getElementById('scanner-modal');
+        const commentModal = document.getElementById('comment-modal');
+
+        // --- Server-Kommunikation ---
+        async function loadStateFromServer() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) return initializeDefaultData();
+                const data = await response.json();
+                if (!data || Object.keys(data).length === 0) return initializeDefaultData();
+                if (data.teamMemberships) delete data.teamMemberships; 
+                return data;
+            } catch (error) {
+                console.error("Fehler beim Laden der Daten:", error);
+                return initializeDefaultData();
+            }
+        }
+
+        async function saveStateToServer() {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ locations, teams, areas, timeLogs, hallPlans, foundItems }),
+                });
+                if (!response.ok) throw new Error(`Server-Antwort war nicht OK: ${response.statusText}`);
+            } catch (error) {
+                console.error("Fehler im saveStateToServer:", error);
+                alert("Änderungen konnten nicht auf dem Server gespeichert werden.");
+                throw error;
+            }
+        }
+
+        function initializeDefaultData() {
+            return { locations: [], teams: [], areas: [], timeLogs: [], hallPlans: [], foundItems: [] };
+        }
+
+        // --- App Initialisierung & Routing ---
+        function init() {
+            const adminRole = localStorage.getItem('inventurUserRole');
+            const teamId = sessionStorage.getItem('inventurTeamId');
+            const teamLocationId = sessionStorage.getItem('inventurTeamLocationId');
+            const adminLocationId = sessionStorage.getItem('selectedLocationId');
+            allViews.forEach(el => el.classList.add('hidden'));
+            if (adminRole === 'Admin') {
+                adminLocationId ? showAdminView(adminLocationId) : showLocationSelection();
+            } else if (teamId && teamLocationId) {
+                showTeamView(teamId, teamLocationId);
+            } else {
+                showLoginView();
+            }
+        }
+        
+        // --- Login / Logout & Location Selection ---
+        function showLoginView() {
+            document.getElementById('login-screen').classList.remove('hidden');
+            loadStateFromServer().then(data => {
+                locations = data.locations || [];
+                teams = data.teams || [];
+                const locationSelect = document.getElementById('login-location-select');
+                locationSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+                locations.forEach(loc => locationSelect.innerHTML += `<option value="${loc.id}">${loc.name}</option>`);
+                document.getElementById('login-team-select-wrapper').classList.add('hidden');
+            });
+        }
+        
+        async function showLocationSelection() {
+            const data = await loadStateFromServer();
+            locations = data.locations || [];
+            const container = document.getElementById('location-list-container');
+            container.innerHTML = '';
+            if (locations.length > 0) {
+                locations.forEach(loc => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white p-6 rounded-lg shadow-md hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer flex flex-col items-center text-center';
+                    card.dataset.locationId = loc.id;
+                    card.innerHTML = `<i class="fa-solid fa-store fa-3x text-blue-500 mb-4"></i><h3 class="text-xl font-bold text-gray-800">${loc.name}</h3>`;
+                    container.appendChild(card);
+                });
+            } else {
+                 container.innerHTML = `<div class="col-span-full text-center p-6 bg-white rounded-lg shadow-md"><h3 class="text-xl font-bold">Keine Standorte gefunden</h3><p class="text-gray-600 mt-2">Bitte legen Sie im Dashboard einen Standort an, um fortzufahren.</p><button id="force-dashboard-btn" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Zum Dashboard</button></div>`;
+                 document.getElementById('force-dashboard-btn').addEventListener('click', () => {
+                    sessionStorage.setItem('selectedLocationId', 'temp_location');
+                    init();
+                 });
+            }
+            document.getElementById('location-selection-screen').classList.remove('hidden');
+        }
+
+        function doLogout() {
+            localStorage.removeItem('inventurUserRole');
+            sessionStorage.clear();
+            init();
+        }
+
+        // --- Ansichten-Management ---
+        async function showAdminView(locationId) {
+            document.getElementById('admin-app-container').classList.remove('hidden');
+            const data = await loadStateFromServer();
+            locations = data.locations || [];
+            teams = data.teams || [];
+            areas = data.areas || [];
+            timeLogs = data.timeLogs || [];
+            hallPlans = data.hallPlans || [];
+            foundItems = data.foundItems || [];
+            const selectedLocation = locations.find(l => l.id == locationId);
+            document.getElementById('selected-location-name').textContent = `Aktive Filiale: ${selectedLocation ? selectedLocation.name : '(Noch keine Filiale angelegt)'}`;
+            document.getElementById('user-role-admin').textContent = 'Admin';
+            populatePlanSelect(locationId);
+            renderAllAdmin(locationId);
+        }
+
+        async function showTeamView(teamId, locationId) { 
+            document.getElementById('team-app-container').classList.remove('hidden');
+            const data = await loadStateFromServer();
+            locations = data.locations || [];
+            teams = data.teams || [];
+            areas = data.areas || [];
+            timeLogs = data.timeLogs || [];
+            hallPlans = data.hallPlans || [];
+            const currentTeam = teams.find(t => t.id == teamId);
+            const currentLocation = locations.find(l => l.id == locationId);
+            if (currentTeam && currentLocation) {
+                document.getElementById('team-name-header').textContent = `Team: ${currentTeam.name}`;
+                document.getElementById('team-location-header').textContent = `Filiale: ${currentLocation.name}`;
+                renderTeamView(teamId, locationId);
+            } else {
+                doLogout();
+            }
+         }
+
+        // --- Render-Funktionen ---
+        function renderAllAdmin(locationId) {
+            const selectedPlanId = planSelect.value;
+            renderLocationAdminList();
+            renderTeamAdminList(locationId);
+            renderPlanAdminList(locationId);
+            renderAreaAdminList(selectedPlanId);
+            renderTimeLog(locationId);
+            renderAreaStatusLists(locationId);
+            renderFoundItemsList(locationId);
+            populateTeamFilterSelect(locationId);
+            renderAreaLegend(selectedPlanId);
+            renderMarkersOnMap(selectedPlanId);
+            const plan = hallPlans.find(p => p.id == selectedPlanId);
+            const locationIdForAreaModal = plan ? plan.locationId : locationId;
+            populateTeamSelect(document.getElementById('assign-team-in-area-modal'), locationIdForAreaModal);
+        }
+        
+        function populateTeamLoginSelect(locationId) {
+            const teamSelect = document.getElementById('login-team-select');
+            teamSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            const filteredTeams = teams.filter(t => t.locationId == locationId);
+            if (filteredTeams.length > 0) {
+                filteredTeams.forEach(team => teamSelect.innerHTML += `<option value="${team.id}">${team.name}</option>`);
+                document.getElementById('login-team-select-wrapper').classList.remove('hidden');
+            } else {
+                teamSelect.innerHTML = '<option value="">Keine Teams für diese Filiale</option>';
+                document.getElementById('login-team-select-wrapper').classList.remove('hidden');
+            }
+        }
+
+        function renderLocationAdminList() {
+             const container = document.getElementById('location-admin-list');
+             container.innerHTML = '';
+             locations.forEach(loc => {
+                const item = document.createElement('div');
+                item.className = 'p-3 bg-gray-100 rounded-md flex justify-between items-center';
+                item.innerHTML = `<span class="font-semibold">${loc.name}</span><div><button class="edit-location-btn text-blue-500 hover:text-blue-700 mr-2" data-location-id="${loc.id}"><i class="fa-solid fa-pen-to-square"></i></button><button class="delete-location-btn text-red-500 hover:text-red-700" data-location-id="${loc.id}"><i class="fa-solid fa-trash"></i></button></div>`;
+                container.appendChild(item);
+             });
+        }
+        function renderTeamAdminList(locationId) {
+            const container = document.getElementById('team-admin-list');
+            container.innerHTML = '';
+            const filteredTeams = teams.filter(t => t.locationId == locationId);
+            if(filteredTeams.length === 0) {
+                 container.innerHTML = '<p class="text-gray-500 text-sm">Keine Teams für diese Filiale angelegt.</p>';
+                 return;
+            }
+            filteredTeams.forEach(team => {
+                const item = document.createElement('div');
+                item.className = 'p-3 bg-gray-100 rounded-md';
+                item.innerHTML = `<div class="flex justify-between items-center"><p class="font-semibold">${team.name}</p><div><button class="edit-team-btn text-blue-500 hover:text-blue-700 mr-2" data-team-id="${team.id}"><i class="fa-solid fa-pen-to-square"></i></button><button class="delete-team-btn text-red-500 hover:text-red-700" data-team-id="${team.id}"><i class="fa-solid fa-trash"></i></button></div></div><p class="text-sm text-gray-600 mt-1">${(team.members || []).length} Mitglied(er)</p>`;
+                container.appendChild(item);
+            });
+        }
+        function renderPlanAdminList(locationId) {
+            const container = document.getElementById('plan-admin-list');
+            container.innerHTML = '';
+            const filteredPlans = hallPlans.filter(p => p.locationId == locationId);
+            if (filteredPlans.length === 0) {
+                 container.innerHTML = '<p class="text-gray-500 text-sm">Keine Pläne für diese Filiale angelegt.</p>';
+                 return;
+            }
+            filteredPlans.forEach(plan => {
+                const item = document.createElement('div');
+                item.className = 'p-3 bg-gray-100 rounded-md';
+                item.innerHTML = `<div class="flex justify-between items-center"><p class="font-semibold" title="${plan.fileName}">${plan.name}</p><div><button class="edit-plan-btn text-blue-500 hover:text-blue-700 mr-2" data-plan-id="${plan.id}"><i class="fa-solid fa-pen-to-square"></i></button><button class="delete-plan-btn text-red-500 hover:text-red-700" data-plan-id="${plan.id}"><i class="fa-solid fa-trash"></i></button></div></div>`;
+                container.appendChild(item);
+            });
+        }
+        function addMemberToAdminList(name) {
+            const teamMembersList = document.getElementById('team-members-list');
+            const memberDiv = document.createElement('div');
+            memberDiv.className = 'flex items-center gap-2 bg-white p-1 rounded';
+            memberDiv.innerHTML = `<input type="text" value="${name}" class="member-item-input flex-grow p-1 border-none bg-transparent focus:outline-none"><button type="button" class="remove-member-btn text-red-500 hover:text-red-700 p-1"><i class="fa-solid fa-trash"></i></button>`;
+            memberDiv.querySelector('.remove-member-btn').addEventListener('click', () => memberDiv.remove());
+            teamMembersList.appendChild(memberDiv);
+        }
+        function renderTeamMembersAdmin(members) {
+            document.getElementById('team-members-list').innerHTML = "";
+            if (members) members.forEach(member => addMemberToAdminList(member));
+        }
+        function renderAreaAdminList(planId) { 
+            const container = document.getElementById('area-admin-list');
+            container.innerHTML = '';
+            if (!planId) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">Bitte zuerst im Bereich "Hallenplan Ansicht" einen Plan auswählen.</p>';
+                return;
+            }
+            const filteredAreas = areas.filter(a => a.planId == planId);
+            if (filteredAreas.length === 0) {
+                 container.innerHTML = '<p class="text-gray-500 text-sm">Für diesen Plan wurden noch keine Bereiche angelegt.</p>';
+                 return;
+            }
+            filteredAreas.forEach(area => {
+                 const team = teams.find(t => area.teamId && t.id == Number(area.teamId));
+                 const item = document.createElement('div');
+                 item.className = 'p-3 bg-gray-100 rounded-md flex justify-between items-center';
+                 item.innerHTML = `<div><p class="font-semibold">${area.name}</p><p class="text-sm text-gray-600">Team: ${team ? team.name : 'Keins'}</p></div><div><button class="edit-area-btn text-blue-500 hover:text-blue-700 mr-2" data-area-id="${area.id}"><i class="fa-solid fa-pen-to-square"></i></button><button class="delete-area-btn text-red-500 hover:text-red-700" data-area-id="${area.id}"><i class="fa-solid fa-trash"></i></button></div>`;
+                 container.appendChild(item);
+            });
+        }
+        function renderTimeLog(locationId) { 
+            const container = document.getElementById('time-log-container');
+            container.innerHTML = '';
+            const logs = getTimeLogsForLocation(locationId).sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+            if(logs.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">Noch keine Zeiten erfasst.</p>';
+                return;
+            }
+            logs.forEach(log => {
+                const team = teams.find(t => t.id == log.teamId);
+                const area = areas.find(a => a.id == log.areaId);
+                const startTime = new Date(log.startTime);
+                const endTime = log.endTime ? new Date(log.endTime) : null;
+                let durationStr = '<span class="text-yellow-600 font-semibold">In Arbeit...</span>';
+                if (endTime) {
+                    const diffMs = endTime - startTime;
+                    const hours = Math.floor(diffMs / 3600000);
+                    const minutes = Math.floor((diffMs % 3600000) / 60000);
+                    durationStr = `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m`;
+                }
+                const logElement = document.createElement('div');
+                logElement.className = 'p-3 bg-gray-50 rounded-md border';
+                logElement.innerHTML = `<p class="font-bold text-gray-800">${area ? area.name : 'Unbek. Bereich'}</p><p class="text-sm text-gray-600">Team: ${team ? team.name : 'Unbek. Team'}</p><div class="text-xs mt-2 grid grid-cols-3 gap-2"><span><i class="fa-solid fa-play text-green-500 mr-1"></i> ${startTime.toLocaleTimeString()}</span><span><i class="fa-solid fa-stop text-red-500 mr-1"></i> ${endTime ? endTime.toLocaleTimeString() : '-'}</span><span><i class="fa-solid fa-hourglass-half text-blue-500 mr-1"></i> ${durationStr}</span></div>`;
+                container.appendChild(logElement);
+            });
+        }
+        function renderFoundItemsList(locationId) {
+            const container = document.getElementById('found-items-admin-list');
+            container.innerHTML = '';
+            const locationPlanIds = hallPlans.filter(p => p.locationId == locationId).map(p => p.id);
+            const locationAreaIds = areas.filter(a => locationPlanIds.includes(a.planId)).map(a => a.id);
+            const filteredItems = foundItems.filter(item => locationAreaIds.includes(item.areaId)).sort((a,b) => {
+                if (a.status === 'geklärt' && b.status !== 'geklärt') return 1;
+                if (a.status !== 'geklärt' && b.status === 'geklärt') return -1;
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            if (filteredItems.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm">Keine Fundstücke gemeldet.</p>';
+                return;
+            }
+            filteredItems.forEach(item => {
+                const area = areas.find(a => a.id === item.areaId);
+                const plan = area ? hallPlans.find(p => p.id === area.planId) : null;
+                const isCleared = item.status === 'geklärt';
+                const itemEl = document.createElement('div');
+                itemEl.className = `p-2 rounded-md border text-sm ${isCleared ? 'bg-gray-200 text-gray-500' : 'bg-gray-50'}`;
+                itemEl.innerHTML = `
+                    <div class="flex gap-3 items-start">
+                        ${item.imageFile ? `<img src="${item.imageFile}" class="w-16 h-16 object-cover rounded-md cursor-pointer view-found-image-btn" data-src="${item.imageFile}">` : '<div class="w-16 h-16 bg-gray-200 rounded-md flex items-center justify-center"><i class="fa-solid fa-image text-gray-400"></i></div>'}
+                        <div class="flex-1">
+                            <p class="font-semibold ${isCleared ? 'line-through' : ''}">${item.description}</p>
+                            <p class="text-xs">Menge: ${item.quantity}</p>
+                            ${item.barcode ? `<p class="text-xs">Barcode: ${item.barcode}</p>` : ''}
+                            <p class="text-xs text-gray-500 mt-1">Ort: ${area ? area.name : 'Unbek.'} (${plan ? plan.name : 'Unbek.'})</p>
+                            ${item.comment ? `<p class="text-xs text-blue-700 mt-1 italic">Kommentar: ${item.comment}</p>` : ''}
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <label for="status-toggle-${item.id}" class="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" value="" id="status-toggle-${item.id}" class="sr-only peer found-item-status-toggle" data-item-id="${item.id}" ${isCleared ? 'checked' : ''}>
+                              <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                            </label>
+                            <span class="text-xs mt-1">${isCleared ? 'Geklärt' : 'Offen'}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(itemEl);
+            });
+        }
+        function populateTeamSelect(selectElement, locationId) { 
+            selectElement.innerHTML = '<option value="">Kein Team</option>';
+            const filteredTeams = teams.filter(t => t.locationId == locationId);
+            if (filteredTeams) filteredTeams.forEach(team => selectElement.innerHTML += `<option value="${team.id}">${team.name}</option>`);
+        }
+        function populateTeamFilterSelect(locationId) { 
+            const select = document.getElementById('team-filter-select');
+            select.innerHTML = '<option value="all">Alle Teams anzeigen</option>';
+            const filteredTeams = teams.filter(t => t.locationId == locationId);
+            if (filteredTeams) filteredTeams.forEach(team => select.innerHTML += `<option value="${team.id}">${team.name}</option>`);
+        }
+        function renderAreaLegend(planId) {
+            const container = document.getElementById('area-legend');
+            container.innerHTML = '';
+            if (!planId) return;
+            const filteredAreas = areas.filter(a => a.planId == planId);
+            filteredAreas.forEach(area => {
+                const team = teams.find(t => area.teamId && t.id == Number(area.teamId));
+                const item = document.createElement('div');
+                item.className = 'p-3 border-l-4 rounded-r-md transition-colors ' + (team ? 'bg-blue-50 border-blue-500' : 'bg-gray-50 border-gray-200');
+                item.innerHTML = `<p class="font-semibold">${area.name}</p><p class="text-sm text-gray-600">Team: ${team ? team.name : 'Nicht zugewiesen'}</p>`;
+                container.appendChild(item);
+            });
+        }
+        function getRenderedImageRect(imageEl, containerEl) {
+            if (!imageEl || !containerEl || !imageEl.complete || imageEl.naturalWidth === 0) return null;
+            const containerRatio = containerEl.clientWidth / containerEl.clientHeight;
+            const imageRatio = imageEl.naturalWidth / imageEl.naturalHeight;
+            let renderedWidth, renderedHeight, x, y;
+            if (imageRatio > containerRatio) {
+                renderedWidth = containerEl.clientWidth;
+                renderedHeight = renderedWidth / imageRatio;
+                x = 0;
+                y = (containerEl.clientHeight - renderedHeight) / 2;
+            } else {
+                renderedHeight = containerEl.clientHeight;
+                renderedWidth = renderedHeight * imageRatio;
+                y = 0;
+                x = (containerEl.clientWidth - renderedWidth) / 2;
+            }
+            return { x, y, width: renderedWidth, height: renderedHeight };
+        }
+        function renderMarkers(targetContainer, imageEl, containerEl, planId, teamIdFilter = null) {
+            targetContainer.innerHTML = '';
+            if (!planId) return;
+            const imageRect = getRenderedImageRect(imageEl, containerEl);
+            if (!imageRect) {
+                setTimeout(() => renderMarkers(targetContainer, imageEl, containerEl, planId, teamIdFilter), 100);
+                return;
+            }
+            let filteredAreas = areas.filter(a => a.planId == planId && a.teamId && typeof a.x === 'number' && typeof a.y === 'number');
+            if (teamIdFilter && teamIdFilter !== 'all') {
+                filteredAreas = filteredAreas.filter(a => a.teamId == teamIdFilter);
+            }
+            filteredAreas.forEach(area => {
+                const team = teams.find(t => t.id == Number(area.teamId));
+                if (team) {
+                    const pinX = imageRect.x + (area.x / 100) * imageRect.width;
+                    const pinY = imageRect.y + (area.y / 100) * imageRect.height;
+                    const marker = document.createElement('div');
+                    marker.className = 'map-marker';
+                    marker.style.left = `${pinX}px`;
+                    marker.style.top = `${pinY}px`;
+                    marker.title = area.name;
+                    const markerText = teamIdFilter && teamIdFilter !== 'all' ? area.name : team.name;
+                    marker.innerHTML = `<span class="marker-text">${markerText}</span><i class="fas fa-map-pin"></i>`;
+                    targetContainer.appendChild(marker);
+                }
+            });
+        }
+        function renderMarkersOnMap(planId) {
+            const teamFilterId = document.getElementById('team-filter-select').value;
+             renderMarkers(
+                document.getElementById('marker-container'),
+                document.getElementById('hall-plan-image'),
+                document.getElementById('hall-plan-container'),
+                planId,
+                teamFilterId
+            );
+        }
+        function renderTeamView(teamId, locationId) { 
+            const container = document.getElementById('team-areas-container');
+            container.innerHTML = '';
+            const locationPlanIds = hallPlans.filter(p => p.locationId == locationId).map(p => p.id);
+            const assignedAreas = areas.filter(a => a.teamId == teamId && locationPlanIds.includes(a.planId));
+            const teamHasActiveLog = timeLogs.some(log => log.teamId == teamId && !log.endTime);
+            if (assignedAreas.length === 0) {
+                container.innerHTML = '<p class="text-gray-600">Diesem Team sind in dieser Filiale keine Bereiche zugewiesen.</p>';
+                return;
+            }
+            const areasByPlan = assignedAreas.reduce((acc, area) => {
+                if (!acc[area.planId]) acc[area.planId] = [];
+                acc[area.planId].push(area);
+                return acc;
+            }, {});
+            for (const planId in areasByPlan) {
+                const plan = hallPlans.find(p => p.id == planId);
+                const areasOnThisPlan = areasByPlan[planId];
+                
+                const planSection = document.createElement('div');
+                planSection.className = 'bg-white p-4 rounded-xl shadow-lg';
+                let areaCardsHtml = areasOnThisPlan.map(area => {
+                    const activeLog = timeLogs.find(log => log.areaId === area.id && log.teamId == teamId && !log.endTime);
+                    const isThisAreaActive = !!activeLog;
+                    const isButtonDisabled = teamHasActiveLog && !isThisAreaActive;
+                    const buttonClasses = isButtonDisabled ? 'bg-gray-400 cursor-not-allowed' : (isThisAreaActive ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600');
+                    return `
+                        <div class="p-4 rounded-lg border-l-4 ${isThisAreaActive ? 'border-yellow-400 bg-yellow-50' : 'border-blue-500 bg-gray-50'}">
+                            <h4 class="text-lg font-bold">${area.name}</h4>
+                            <p class="text-gray-500 mb-3 text-sm">Status: ${isThisAreaActive ? 'In Bearbeitung' : 'Bereit'}</p>
+                            <button class="time-tracking-btn w-full px-4 py-2 text-white rounded-lg font-semibold transition-colors text-sm ${buttonClasses}" data-area-id="${area.id}" data-action="${isThisAreaActive ? 'stop' : 'start'}" ${isButtonDisabled ? 'disabled' : ''}>
+                                <i class="fa-solid ${isThisAreaActive ? 'fa-stop' : 'fa-play'} mr-2"></i> ${isThisAreaActive ? 'Zählung BEENDEN' : 'Zählung STARTEN'}
+                            </button>
+                            ${isButtonDisabled ? `<p class="text-xs text-center mt-1 text-gray-500">Beenden Sie erst den aktiven Bereich.</p>` : ''}
+                        </div>`;
+                }).join('');
+                planSection.innerHTML = `
+                    <div class="flex justify-between items-center mb-4 border-b pb-3">
+                        <h3 class="text-xl font-bold text-gray-800">${plan ? plan.name : 'Unbekannter Plan'}</h3>
+                        <div class="flex items-center gap-2">
+                            <button class="add-found-item-btn px-3 py-2 bg-orange-500 text-white text-sm font-semibold rounded-md hover:bg-orange-600" data-area-id="${areasOnThisPlan[0].id}"><i class="fa-solid fa-magnifying-glass-plus mr-2"></i>Fund melden</button>
+                            ${plan && plan.fileName ? `<button class="show-plan-btn px-3 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-md hover:bg-gray-300" data-plan-id="${plan.id}"><i class="fa-solid fa-map-location-dot mr-2"></i>Karte anzeigen</button>` : ''}
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${areaCardsHtml}</div>
+                `;
+                container.appendChild(planSection);
+            }
+        }
+        
+        function populatePlanSelect(locationId) {
+            planSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            const filteredPlans = hallPlans.filter(p => p.locationId == locationId);
+            filteredPlans.forEach(p => {
+                planSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+            });
+            updateHallPlanView(planSelect.value || null);
+        }
+
+        function updateHallPlanView(planId) {
+            const imageEl = document.getElementById('hall-plan-image');
+            const placeholderEl = document.getElementById('hall-plan-placeholder');
+            const plan = hallPlans.find(p => p.id == planId);
+            if (plan && plan.fileName) {
+                imageEl.src = plan.fileName;
+                imageEl.style.display = 'block';
+                placeholderEl.style.display = 'none';
+                imageEl.onload = () => renderMarkersOnMap(planId);
+                if (imageEl.complete) renderMarkersOnMap(planId);
+            } else {
+                imageEl.src = '';
+                imageEl.style.display = 'none';
+                placeholderEl.style.display = 'block';
+            }
+            const locationId = sessionStorage.getItem('selectedLocationId');
+            renderAllAdmin(locationId);
+        }
+
+        function showTeamLoginGuide() {
+            if (!localStorage.getItem('teamLoginGuideShown')) {
+                firstRunModal.classList.remove('hidden');
+            }
+        }
+
+        function renderAreaStatusLists(locationId) {
+            const openList = document.getElementById('open-areas-list');
+            const completedList = document.getElementById('completed-areas-list');
+            openList.innerHTML = '';
+            completedList.innerHTML = '';
+            const locationPlanIds = hallPlans.filter(p => p.locationId == locationId).map(p => p.id);
+            const locationAreas = areas.filter(a => locationPlanIds.includes(a.planId));
+            const completedTimeLogs = timeLogs.filter(log => log.endTime !== null);
+            const completedAreaIds = new Set(completedTimeLogs.map(log => log.areaId));
+            if (locationAreas.length === 0) {
+                openList.innerHTML = '<p class="text-gray-500 text-sm">Keine Bereiche angelegt.</p>';
+                return;
+            }
+            let openCount = 0, completedCount = 0;
+            locationAreas.forEach(area => {
+                const plan = hallPlans.find(p => p.id === area.planId);
+                const itemHtml = `<div class="p-2 bg-gray-100 rounded-md text-sm">${area.name} <span class="text-gray-500">(${plan ? plan.name : 'Unbek.'})</span></div>`;
+                if (completedAreaIds.has(area.id)) {
+                    completedList.innerHTML += itemHtml;
+                    completedCount++;
+                } else {
+                    openList.innerHTML += itemHtml;
+                    openCount++;
+                }
+            });
+            if(openCount === 0 && locationAreas.length > 0) openList.innerHTML = '<p class="text-green-600 text-sm font-semibold">Alle Bereiche in dieser Filiale abgeschlossen!</p>';
+            if(completedCount === 0) completedList.innerHTML = '<p class="text-gray-500 text-sm">Noch keine Bereiche abgeschlossen.</p>';
+        }
+
+        function getTimeLogsForLocation(locationId) {
+            const locationPlanIds = hallPlans.filter(p => p.locationId == locationId).map(p => p.id);
+            const locationAreaIds = areas.filter(a => locationPlanIds.includes(a.planId)).map(a => a.id);
+            return timeLogs.filter(log => locationAreaIds.includes(log.areaId));
+        }
+
+        function exportTimesToCSV(locationId) {
+            const location = locations.find(l => l.id == locationId);
+            if (!location) return;
+            const logsToExport = getTimeLogsForLocation(locationId);
+            if (logsToExport.length === 0) {
+                alert("Es gibt keine Zeiteinträge zum Exportieren für diese Filiale.");
+                return;
+            }
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Filiale;Bereich;Team;Startzeit;Endzeit;Dauer (Minuten)\n";
+            logsToExport.forEach(log => {
+                const area = areas.find(a => a.id === log.areaId);
+                const team = teams.find(t => t.id == log.teamId);
+                const startTime = new Date(log.startTime);
+                const endTime = log.endTime ? new Date(log.endTime) : null;
+                let durationMinutes = "N/A";
+                if (endTime) { durationMinutes = Math.round((endTime - startTime) / 60000); }
+                const row = [`"${location.name}"`,`"${area ? area.name : 'Unbekannt'}"`,`"${team ? team.name : 'Unbekannt'}"`,`"${startTime.toLocaleString('de-DE')}"`,`"${endTime ? endTime.toLocaleString('de-DE') : 'Offen'}"`,durationMinutes].join(";");
+                csvContent += row + "\n";
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            const date = new Date().toISOString().slice(0, 10);
+            link.setAttribute("download", `Zeiterfassung_${location.name.replace(/\s/g, '_')}_${date}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function exportFoundItemsToCSV(locationId) {
+            const location = locations.find(l => l.id == locationId);
+            if (!location) return;
+            const locationPlanIds = hallPlans.filter(p => p.locationId == locationId).map(p => p.id);
+            const locationAreaIds = areas.filter(a => locationPlanIds.includes(a.planId)).map(a => a.id);
+            const itemsToExport = foundItems.filter(item => locationAreaIds.includes(item.areaId));
+            if (itemsToExport.length === 0) {
+                alert("Es gibt keine Fundstücke zum Exportieren für diese Filiale.");
+                return;
+            }
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Filiale;Beschreibung;Menge;Barcode;Fundort Bereich;Fundort Plan;Status;Kommentar;Zeitstempel\n";
+            itemsToExport.forEach(item => {
+                const area = areas.find(a => a.id === item.areaId);
+                const plan = area ? hallPlans.find(p => p.id === area.planId) : null;
+                const timestamp = new Date(item.timestamp).toLocaleString('de-DE');
+                const row = [`"${location.name}"`,`"${(item.description || '').replace(/"/g, '""')}"`,item.quantity,`"${item.barcode || ''}"`,`"${area ? area.name : 'Unbekannt'}"`,`"${plan ? plan.name : 'Unbekannt'}"`,`"${item.status}"`,`"${(item.comment || '').replace(/"/g, '""')}"`,`"${timestamp}"`].join(";");
+                csvContent += row + "\n";
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            const date = new Date().toISOString().slice(0, 10);
+            link.setAttribute("download", `Fundgrube_${location.name.replace(/\s/g, '_')}_${date}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function openPlanViewer(srcOrId) {
+            const modalImage = imageViewerModal.querySelector('#modal-image');
+            modalImage.src = srcOrId;
+            document.getElementById('modal-marker-container').innerHTML = ''; 
+            imageViewerModal.classList.remove('hidden');
+        }
+
+        async function openBarcodeScanner() {
+            if (!('mediaDevices' in navigator && 'getUserMedia' in navigator.mediaDevices)) {
+                alert("Kamerazugriff wird von diesem Browser nicht unterstützt.");
+                return;
+            }
+            scannerModal.classList.remove('hidden');
+            const videoElement = document.getElementById('scanner-video');
+            const statusElement = document.getElementById('scanner-status');
+            try {
+                barcodeReader = new ZXing.BrowserMultiFormatReader();
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                videoElement.srcObject = stream;
+                statusElement.textContent = "Halten Sie einen Barcode vor die Kamera.";
+                barcodeReader.decodeFromStream(videoElement, stream, (result, error) => {
+                    if (result) {
+                        document.getElementById('found-item-barcode').value = result.getText();
+                        closeBarcodeScanner();
+                        document.getElementById('found-item-barcode').dispatchEvent(new Event('input'));
+                    }
+                });
+            } catch (err) {
+                statusElement.textContent = "Kamerazugriff fehlgeschlagen.";
+                alert("Fehler beim Kamerazugriff. Bitte stellen Sie sicher, dass die Berechtigung erteilt wurde und die Seite über HTTPS oder localhost aufgerufen wird.");
+                closeBarcodeScanner();
+            }
+        }
+        
+        function closeBarcodeScanner() {
+            if (barcodeReader) {
+                barcodeReader.reset();
+                const videoElement = document.getElementById('scanner-video');
+                if (videoElement.srcObject) {
+                    videoElement.srcObject.getTracks().forEach(track => track.stop());
+                }
+                videoElement.srcObject = null;
+            }
+            scannerModal.classList.add('hidden');
+        }
+
+        function openFoundItemModal(areaId) {
+            currentFoundItemAreaId = areaId;
+            const area = areas.find(a => a.id === areaId);
+            foundItemModal.querySelector('#found-item-modal-title').textContent = `Fundstück melden (Bereich: ${area ? area.name : 'Unbekannt'})`;
+            document.getElementById('found-item-description').value = '';
+            document.getElementById('found-item-barcode').value = '';
+            document.getElementById('found-item-quantity').value = '1';
+            document.getElementById('found-item-photo').value = '';
+            document.getElementById('photo-preview').classList.add('hidden');
+            document.getElementById('barcode-web-search-btn').classList.add('hidden');
+            foundItemImageData = null;
+            foundItemModal.classList.remove('hidden');
+        }
+
+        function handlePhotoSelection(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                const preview = document.getElementById('photo-preview');
+                preview.src = e.target.result;
+                preview.classList.remove('hidden');
+                foundItemImageData = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function saveFoundItem() {
+            const description = document.getElementById('found-item-description').value.trim();
+            const barcode = document.getElementById('found-item-barcode').value.trim();
+            const quantity = document.getElementById('found-item-quantity').value;
+            
+            if (!description) {
+                alert("Bitte geben Sie eine Beschreibung ein.");
+                return;
+            }
+            try {
+                const response = await fetch('/api/found-item', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        areaId: currentFoundItemAreaId,
+                        description,
+                        barcode,
+                        quantity,
+                        imageData: foundItemImageData
+                    })
+                });
+                if (!response.ok) throw new Error("Server-Antwort war nicht OK");
+                const result = await response.json();
+                foundItems.push(result.item);
+                foundItemModal.classList.add('hidden');
+                alert("Fundstück erfolgreich gemeldet!");
+            } catch (error) {
+                console.error("Fehler beim Senden des Fundstücks:", error);
+                alert("Das Fundstück konnte nicht gesendet werden.");
+            }
+        }
+        
+        async function updateFoundItemStatus(itemId, newStatus, comment = null) {
+             try {
+                const body = { itemId, status: newStatus };
+                if (comment !== null) {
+                    body.comment = comment;
+                }
+                const response = await fetch('/api/found-item/status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!response.ok) throw new Error('Status-Update fehlgeschlagen');
+                
+                const itemInState = foundItems.find(i => i.id === itemId);
+                if (itemInState) {
+                    itemInState.status = newStatus;
+                    if (comment !== null) {
+                        itemInState.comment = comment;
+                    }
+                }
+                renderFoundItemsList(sessionStorage.getItem('selectedLocationId'));
+
+            } catch (error) {
+                console.error("Fehler beim Aktualisieren des Status:", error);
+            }
+        }
+
+        // --- Event Listeners Setup ---
+        function setupEventListeners() {
+            document.getElementById('login-button-admin').addEventListener('click', () => { if (document.getElementById('password').value.trim().toLowerCase() === ADMIN_PASS) { localStorage.setItem('inventurUserRole', 'Admin'); init(); } else { document.getElementById('login-error').classList.remove('hidden'); } });
+            document.getElementById('login-location-select').addEventListener('change', (e) => populateTeamLoginSelect(e.target.value));
+            document.getElementById('login-button-team').addEventListener('click', () => {
+                const teamId = document.getElementById('login-team-select').value;
+                const locationId = document.getElementById('login-location-select').value;
+                if (teamId && locationId) {
+                    sessionStorage.setItem('inventurTeamId', teamId);
+                    sessionStorage.setItem('inventurTeamLocationId', locationId);
+                    init();
+                } else { alert("Bitte Filiale und Team auswählen."); }
+            });
+            document.getElementById('location-list-container').addEventListener('click', e => { const card = e.target.closest('[data-location-id]'); if (card) { sessionStorage.setItem('selectedLocationId', card.dataset.locationId); init(); } });
+            document.getElementById('change-location-btn').addEventListener('click', () => { sessionStorage.removeItem('selectedLocationId'); init(); });
+            [document.getElementById('logout-button-admin'), document.getElementById('logout-button-from-selection'), document.getElementById('logout-button-team')].forEach(btn => btn.addEventListener('click', doLogout));
+            document.getElementById('add-member-btn').addEventListener('click', () => { const newName = document.getElementById('new-member-name').value.trim(); if (newName) { addMemberToAdminList(newName); document.getElementById('new-member-name').value = ""; document.getElementById('new-member-name').focus(); } });
+            document.getElementById('new-member-name').addEventListener('keypress', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('add-member-btn').click(); } });
+            
+            document.getElementById('pick-coords-btn').addEventListener('click', () => {
+                const imageEl = document.getElementById('hall-plan-image');
+                if (!imageEl.src || !imageEl.complete || imageEl.naturalWidth === 0) return alert("Bitte zuerst einen Hallenplan mit einem gültigen Bild laden.");
+                areaDetailsModal.classList.add('hidden');
+                document.getElementById('hall-plan-container').classList.add('picking-mode');
+                document.getElementById('hall-plan-container').addEventListener('click', e => {
+                    const imageRect = getRenderedImageRect(imageEl, document.getElementById('hall-plan-container'));
+                    if (!imageRect) return;
+                    const containerRect = document.getElementById('hall-plan-container').getBoundingClientRect();
+                    const clickX = e.clientX - containerRect.left;
+                    const clickY = e.clientY - containerRect.top;
+                    const imageX = clickX - imageRect.x;
+                    const imageY = clickY - imageRect.y;
+                    if (imageX >= 0 && imageX <= imageRect.width && imageY >= 0 && imageY <= imageRect.height) {
+                        const percentX = (imageX / imageRect.width) * 100;
+                        const percentY = (imageY / imageRect.height) * 100;
+                        areaDetailsModal.querySelector('#area-coord-x').value = percentX.toFixed(2);
+                        areaDetailsModal.querySelector('#area-coord-y').value = percentY.toFixed(2);
+                    }
+                    document.getElementById('hall-plan-container').classList.remove('picking-mode');
+                    areaDetailsModal.classList.remove('hidden');
+                }, { once: true });
+            });
+
+            document.getElementById('team-areas-container').addEventListener('click', e => {
+                const button = e.target.closest('button');
+                if (!button) return;
+                const teamId = sessionStorage.getItem('inventurTeamId');
+                const locationId = sessionStorage.getItem('inventurTeamLocationId');
+                if (button.matches('.time-tracking-btn') && !button.disabled) {
+                    const areaId = button.dataset.areaId, action = button.dataset.action;
+                    if (action === 'start') {
+                        timeLogs.push({ id: `log_${Date.now()}`, areaId, teamId, startTime: new Date().toISOString(), endTime: null });
+                    } else if (action === 'stop') {
+                        const activeLog = timeLogs.find(log => log.areaId === areaId && log.teamId == teamId && !log.endTime);
+                        if (activeLog) activeLog.endTime = new Date().toISOString();
+                    }
+                    saveStateToServer().then(() => renderTeamView(teamId, locationId)).catch(() => {});
+                } else if (button.matches('.show-plan-btn')) {
+                    const planId = button.dataset.planId;
+                    if (planId) openPlanViewer(planId);
+                } else if (button.matches('.add-found-item-btn')) {
+                    const activeLog = timeLogs.find(log => log.teamId == teamId && !log.endTime);
+                    const areaId = activeLog ? activeLog.areaId : button.dataset.areaId;
+                    openFoundItemModal(areaId);
+                }
+            });
+            
+            document.getElementById('admin-panel').addEventListener('click', e => {
+                const button = e.target.closest('button');
+                if (!button) return;
+                const { teamId, locationId, areaId, planId } = button.dataset;
+                if (button.matches('#add-location-btn')) addLocation();
+                else if (button.matches('.edit-location-btn')) editLocation(locationId);
+                else if (button.matches('.delete-location-btn')) deleteLocation(locationId);
+                else if (button.matches('#add-team-btn')) addTeam();
+                else if (button.matches('.edit-team-btn')) editTeam(teamId);
+                else if (button.matches('.delete-team-btn')) deleteTeam(teamId);
+                else if (button.matches('#add-plan-btn')) addPlan();
+                else if (button.matches('.edit-plan-btn')) editPlan(planId);
+                else if (button.matches('.delete-plan-btn')) deletePlan(planId);
+                else if (button.matches('#add-area-btn')) addArea();
+                else if (button.matches('.edit-area-btn')) editArea(areaId);
+                else if (button.matches('.delete-area-btn')) deleteArea(areaId);
+                else if (button.matches('#export-times-btn')) exportTimesToCSV(sessionStorage.getItem('selectedLocationId'));
+                else if (button.matches('#export-found-items-btn')) exportFoundItemsToCSV(sessionStorage.getItem('selectedLocationId'));
+            });
+            
+            document.getElementById('admin-app-container').addEventListener('click', e => {
+                if (e.target.matches('.view-found-image-btn')) {
+                    openPlanViewer(e.target.src);
+                }
+            });
+            document.getElementById('admin-app-container').addEventListener('change', e => {
+                if (e.target.matches('.found-item-status-toggle')) {
+                    const itemId = e.target.dataset.itemId;
+                    if (e.target.checked) {
+                        currentCommentItemId = itemId;
+                        commentModal.querySelector('#comment-textarea').value = '';
+                        commentModal.classList.remove('hidden');
+                    } else {
+                        updateFoundItemStatus(itemId, 'offen', '');
+                    }
+                }
+            });
+            
+            planSelect.addEventListener('change', e => updateHallPlanView(e.target.value));
+            document.getElementById('team-filter-select').addEventListener('change', () => renderMarkersOnMap(planSelect.value));
+            
+            document.getElementById('team-modal-save').addEventListener('click', () => {
+                const name = document.getElementById('team-name').value.trim();
+                if(!name) return alert("Bitte Teamnamen eingeben.");
+                const members = Array.from(document.querySelectorAll('#team-members-list .member-item-input')).map(input => input.value.trim()).filter(Boolean);
+                const locationId = sessionStorage.getItem('selectedLocationId');
+                if (currentEditingId) {
+                    const team = teams.find(t => t.id == currentEditingId);
+                    if (team) Object.assign(team, { name, members });
+                } else {
+                    teams.push({ id: Date.now(), name, members, locationId });
+                }
+                saveStateToServer().then(() => { renderAllAdmin(locationId); teamModal.classList.add('hidden'); }).catch(() => {});
+            });
+            document.getElementById('team-modal-cancel').addEventListener('click', () => teamModal.classList.add('hidden'));
+            
+            document.getElementById('location-modal-save').addEventListener('click', () => {
+                const name = document.getElementById('location-name').value.trim();
+                if(!name) return alert("Bitte Namen eingeben.");
+                if (currentEditingId) {
+                    const loc = locations.find(l => l.id == currentEditingId);
+                    if (loc) loc.name = name;
+                } else {
+                    locations.push({ id: Date.now(), name });
+                }
+                saveStateToServer().then(() => { sessionStorage.removeItem('selectedLocationId'); locationModal.classList.add('hidden'); init(); }).catch(() => {});
+            });
+            document.getElementById('location-modal-cancel').addEventListener('click', () => locationModal.classList.add('hidden'));
+
+            document.getElementById('area-details-modal-save').addEventListener('click', () => {
+                const name = document.getElementById('area-name').value.trim();
+                if (!name) return alert("Bitte Namen eingeben.");
+                const currentPlanId = planSelect.value;
+                if (!currentPlanId) return alert("Bitte zuerst Hallenplan auswählen.");
+                const areaData = { name, planId: currentPlanId, x: parseFloat(document.getElementById('area-coord-x').value) || null, y: parseFloat(document.getElementById('area-coord-y').value) || null, teamId: document.getElementById('assign-team-in-area-modal').value };
+                if (currentEditingId) {
+                    const area = areas.find(a => a.id == currentEditingId);
+                    if (area) Object.assign(area, areaData);
+                } else {
+                    areaData.id = `area_${Date.now()}`;
+                    areas.push(areaData);
+                }
+                saveStateToServer().then(() => { renderAllAdmin(sessionStorage.getItem('selectedLocationId'));
